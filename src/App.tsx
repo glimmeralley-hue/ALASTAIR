@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 
-// simple encryption - XOR with shared key
+// XOR encryption with shared key
 function encrypt(text: string, key: string): string {
   let result = ''
   for (let i = 0; i < text.length; i++) {
     result += String.fromCharCode(text.charCodeAt(i) ^ key.charCodeAt(i % key.length))
   }
-  return btoa(result) // base64 encode
+  return btoa(result)
 }
 
 function decrypt(text: string, key: string): string {
@@ -19,15 +19,13 @@ function decrypt(text: string, key: string): string {
     }
     return result
   } catch {
-    return text // fallback for non-encrypted
+    return text
   }
 }
 
 function App() {
-  // landing page state
   const [started, setStarted] = useState(false)
   
-  // chat state
   const [myCode, setMyCode] = useState('')
   const [theirCode, setTheirCode] = useState('')
   const [sessionId, setSessionId] = useState('')
@@ -39,20 +37,17 @@ function App() {
   const [fadingMsgs, setFadingMsgs] = useState<Set<string>>(new Set())
   const [fileInput, setFileInput] = useState<HTMLInputElement | null>(null)
 
-  // encryption key derived from both codes
   const getKey = () => {
     const sorted = [myCode, theirCode].sort().join('')
     return sorted
   }
 
-  // get code on start
   useEffect(() => {
     fetch('http://localhost:5000/getcode', {method: 'POST'})
       .then(r => r.json())
       .then(d => setMyCode(d.code))
   }, [])
 
-  // screenshot detection
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'PrintScreen') {
@@ -77,11 +72,10 @@ function App() {
     }
   }, [connected])
 
-  // poll for messages
   useEffect(() => {
     if (!sessionId) return
     const interval = setInterval(() => {
-      fetch(`http://localhost:5000/messages/${sessionId}`)
+      fetch(`http://localhost:5000/messages/${sessionId}?user=${myCode}`)
         .then(r => {
           if (r.status === 404) {
             setError('Session expired')
@@ -94,7 +88,6 @@ function App() {
         .then(msgs => {
           if (!Array.isArray(msgs)) return
           if (msgs.length > 0) {
-            // decrypt messages - preserve type field
             const key = getKey()
             const decrypted = msgs.map((m: any) => ({
               ...m,
@@ -103,9 +96,11 @@ function App() {
             }))
             
             setMessages(prev => {
-              const newMsgs = [...prev, ...decrypted]
-              // auto fade out after 5 seconds
-              decrypted.forEach((m: any) => {
+              const existingIds = new Set(prev.map(m => m.id))
+              const newMessages = decrypted.filter(m => !existingIds.has(m.id))
+              const newMsgs = [...prev, ...newMessages]
+              
+              newMessages.forEach((m: any) => {
                 setTimeout(() => {
                   setFadingMsgs(f => new Set([...f, m.id]))
                   setTimeout(() => {
@@ -161,7 +156,6 @@ function App() {
     })
   }
 
-  // check if text is a URL
   function isUrl(text: string): boolean {
     try {
       new URL(text)
@@ -171,7 +165,6 @@ function App() {
     }
   }
 
-  // render message content based on type
   function renderContent(m: any) {
     const text = m.text
     
@@ -192,7 +185,6 @@ function App() {
     
     const id = Date.now().toString()
     
-    // encrypt content
     const key = getKey()
     const encrypted = encrypt(toSend, key)
     const m = { id, sender: myCode, text: encrypted, type, encrypted: true }
@@ -213,11 +205,9 @@ function App() {
     })
     .catch(() => {})
     
-    // show locally
     setMessages(prev => [...prev, { id, sender: myCode, text: toSend, type, local: true }])
     setMsg('')
     
-    // fade out after 5 sec
     setTimeout(() => {
       setFadingMsgs(f => new Set([...f, id]))
       setTimeout(() => {
@@ -235,7 +225,6 @@ function App() {
     const file = e.target.files?.[0]
     if (!file) return
     
-    // check file size (max 2MB for now)
     if (file.size > 2 * 1024 * 1024) {
       setError('Image too large - max 2MB')
       setTimeout(() => setError(''), 5000)
@@ -249,11 +238,9 @@ function App() {
     }
     reader.readAsDataURL(file)
     
-    // reset input
     e.target.value = ''
   }
 
-  // landing page
   if (!started) {
     return (
       <div className="landing">
