@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
+// @ts-ignore
 import './App.css'
 
-// XOR encryption with shared key
 function encrypt(text: string, key: string): string {
   let result = ''
   for (let i = 0; i < text.length; i++) {
@@ -25,7 +25,6 @@ function decrypt(text: string, key: string): string {
 
 function App() {
   const [started, setStarted] = useState(false)
-  
   const [myCode, setMyCode] = useState('')
   const [theirCode, setTheirCode] = useState('')
   const [sessionId, setSessionId] = useState('')
@@ -36,10 +35,10 @@ function App() {
   const [warning, setWarning] = useState('')
   const [fadingMsgs, setFadingMsgs] = useState<Set<string>>(new Set())
   const [fileInput, setFileInput] = useState<HTMLInputElement | null>(null)
+  const [locationSharing, setLocationSharing] = useState(false)
 
   const getKey = () => {
-    const sorted = [myCode, theirCode].sort().join('')
-    return sorted
+    return [myCode, theirCode].sort().join('')
   }
 
   useEffect(() => {
@@ -49,7 +48,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
+    const keyPress = (e: KeyboardEvent) => {
       if (e.key === 'PrintScreen') {
         e.preventDefault()
         setWarning(' Screenshot detected - message will self-destruct')
@@ -57,18 +56,18 @@ function App() {
       }
     }
     
-    const handleVisibility = () => {
+    const visibilityChange = () => {
       if (document.hidden && connected) {
         console.log('Tab switched - session continues')
       }
     }
     
-    window.addEventListener('keydown', handleKey)
-    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('keydown', keyPress)
+    document.addEventListener('visibilitychange', visibilityChange)
     
     return () => {
-      window.removeEventListener('keydown', handleKey)
-      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('keydown', keyPress)
+      document.removeEventListener('visibilitychange', visibilityChange)
     }
   }, [connected])
 
@@ -121,9 +120,35 @@ function App() {
     return () => clearInterval(interval)
   }, [sessionId])
 
+  useEffect(() => {
+    if (locationSharing && connected) {
+      shareLocation()
+    }
+  }, [locationSharing, connected])
+
   function connect() {
-    if (!theirCode.trim()) {
-      setError('Enter a code first')
+    setError('')
+    
+        if (!myCode || !theirCode) {
+      setError('Both codes are required')
+      setTimeout(() => setError(''), 3000)
+      return
+    }
+    
+    if (myCode === theirCode) {
+      setError("You can't connect to yourself")
+      setTimeout(() => setError(''), 3000)
+      return
+    }
+    
+    if (theirCode.length !== 8) {
+      setError('Code must be exactly 8 characters')
+      setTimeout(() => setError(''), 3000)
+      return
+    }
+    
+    if (!/^[A-Z0-9]+$/.test(theirCode)) {
+      setError('Code must contain only letters and numbers')
       setTimeout(() => setError(''), 3000)
       return
     }
@@ -133,21 +158,15 @@ function App() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ myCode, theirCode })
     })
-    .then(r => {
-      if (!r.ok) {
-        throw new Error(`Server error: ${r.status}`)
-      }
-      return r.json()
-    })
+    .then(r => r.json())
     .then(d => {
-      if (d.sessionId) {
-        setSessionId(d.sessionId)
-        setConnected(true)
-        setError('')
-      } else if (d.error) {
+      if (d.error) {
         setError(d.error)
         setTimeout(() => setError(''), 5000)
+        return
       }
+      setSessionId(d.sessionId)
+      setConnected(true)
     })
     .catch(err => {
       setError('Connection failed - is server running?')
@@ -158,18 +177,122 @@ function App() {
 
   function isUrl(text: string): boolean {
     try {
-      new URL(text)
-      return true
+      const url = new URL(text, 'https://example.com')
+      return !!(url.protocol && url.host)
     } catch {
       return false
     }
   }
 
+  function isPdfUrl(text: string): boolean {
+    return isUrl(text) && text.toLowerCase().includes('.pdf')
+  }
+
+  function isEpubUrl(text: string): boolean {
+    return isUrl(text) && text.toLowerCase().includes('.epub')
+  }
+
+  function isDocxUrl(text: string): boolean {
+    return isUrl(text) && text.toLowerCase().includes('.docx')
+  }
+
+  function isDocumentUrl(text: string): boolean {
+    return isPdfUrl(text) || isEpubUrl(text) || isDocxUrl(text)
+  }
+
   function renderContent(m: any) {
     const text = m.text
     
+    if (m.type === 'location') {
+      try {
+        const location = JSON.parse(text)
+        return (
+          <div className="location-message">
+            <div className="location-info">
+              📍 <strong>Live Location</strong>
+              <br />
+              Lat: {location.lat}°, Lng: {location.lng}°
+              <br />
+              Accuracy: ±{location.accuracy}m
+            </div>
+            <div className="document-warning">
+              ⚠️ Location shared - auto-deletes after 5 seconds
+            </div>
+          </div>
+        )
+      } catch {
+        return <p>Location data unavailable</p>
+      }
+    }
+    
     if (m.type === 'image') {
-      return <img src={text} alt="shared" className="msg-image" />
+      return (
+        <div className="image-container">
+          <img src={text} alt="shared" className="msg-image" />
+          <div className="image-actions">
+            <button 
+              onClick={() => {
+                const link = document.createElement('a')
+                link.href = text
+                link.download = `image_${m.id}.jpg`
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+              }}
+              className="download-btn"
+              title="Download image"
+            >
+              ⬇️
+            </button>
+          </div>
+          <div className="document-warning">
+            ⚠️ Image download persists beyond ephemeral chat
+          </div>
+        </div>
+      )
+    }
+    
+    if (isDocumentUrl(text)) {
+      let icon = '📄'
+      let type = 'document'
+      
+      if (isPdfUrl(text)) {
+        icon = '📄'
+        type = 'PDF'
+      } else if (isEpubUrl(text)) {
+        icon = '📚'
+        type = 'EPUB'
+      } else if (isDocxUrl(text)) {
+        icon = '📝'
+        type = 'DOCX'
+      }
+      
+      return (
+        <div className="document-link">
+          <a href={text} target="_blank" rel="noopener" className="msg-link">
+            {icon} {text}
+          </a>
+          <div className="document-actions">
+            <button 
+              onClick={() => {
+                const link = document.createElement('a')
+                link.href = text
+                link.download = text.split('/').pop() || 'document'
+                document.body.appendChild(link)
+                link.click()
+                document.body.removeChild(link)
+              }}
+              className="download-btn"
+              title={`Download ${type}`}
+            >
+              ⬇️
+            </button>
+          </div>
+          <div className="document-warning">
+            ⚠️ {type} download persists beyond ephemeral chat
+          </div>
+        </div>
+      )
     }
     
     if (isUrl(text)) {
@@ -179,12 +302,43 @@ function App() {
     return <p>{text}</p>
   }
 
-  function sendMsg(type: string = 'text', content?: string) {
+  function shareLocation() {
+  if (!navigator.geolocation) {
+    setError('Location not supported by your browser')
+    setTimeout(() => setError(''), 3000)
+    return
+  }
+  
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      const { latitude, longitude, accuracy } = position.coords
+      const locationData = {
+        lat: latitude.toFixed(6),
+        lng: longitude.toFixed(6),
+        accuracy: Math.round(accuracy),
+        timestamp: Date.now()
+      }
+      
+      sendMsg('location', JSON.stringify(locationData))
+      setLocationSharing(false)
+      
+            setTimeout(() => {
+        setLocationSharing(false)
+      }, 30000)
+    },
+    () => {
+      setError('Location access denied or unavailable')
+      setTimeout(() => setError(''), 3000)
+      setLocationSharing(false)
+    }
+  )
+}
+
+function sendMsg(type: string = 'text', content?: string) {
     const toSend = content || msg
     if (!toSend.trim() || !sessionId) return
     
     const id = Date.now().toString()
-    
     const key = getKey()
     const encrypted = encrypt(toSend, key)
     const m = { id, sender: myCode, text: encrypted, type, encrypted: true }
@@ -221,7 +375,7 @@ function App() {
     }, 5000)
   }
 
-  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  function imageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     
@@ -264,8 +418,14 @@ function App() {
   }
 
   async function pasteCode() {
-    const text = await navigator.clipboard.readText()
-    setTheirCode(text.toUpperCase().slice(0, 8))
+    try {
+      const text = await navigator.clipboard.readText()
+      const cleanCode = text.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
+      setTheirCode(cleanCode)
+    } catch {
+      setError('Could not access clipboard')
+      setTimeout(() => setError(''), 3000)
+    }
   }
 
   return (
@@ -349,9 +509,16 @@ function App() {
               type="file"
               accept="image/*"
               ref={setFileInput}
-              onChange={handleImageSelect}
+              onChange={imageSelect}
               style={{ display: 'none' }}
             />
+            <button 
+              onClick={() => setLocationSharing(!locationSharing)} 
+              className={`location-btn ${locationSharing ? 'active' : ''}`}
+              title={locationSharing ? 'Stop location sharing' : 'Share live location'}
+            >
+              📍
+            </button>
             <button onClick={() => fileInput?.click()} title="send image">📷</button>
             <button onClick={() => sendMsg('text')}>SEND</button>
           </div>

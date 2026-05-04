@@ -15,17 +15,20 @@ blocked_ips = set()
 
 MAX_MESSAGES_PER_MINUTE = 10
 SESSION_TIMEOUT = 300
-MAX_CONNECTIONS_PER_IP = 3
+MAX_CONNECTIONS_PER_IP = 30
+MAX_DOCUMENT_LINKS_PER_SESSION = 5
 
 def get_client_ip():
-    if request.headers.get('X-Forwarded-For'):
-        return request.headers.get('X-Forwarded-For').split(',')[0].strip()
+    forwarded = request.headers.get('X-Forwarded-For')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
     return request.remote_addr
 
 def check_rate_limit(ip):
     now = time.time()
-    rate_limits[ip] = [t for t in rate_limits[ip] if now - t < 60]
-    if len(rate_limits[ip]) >= MAX_MESSAGES_PER_MINUTE:
+    recent = [t for t in rate_limits[ip] if now - t < 60]
+    rate_limits[ip] = recent
+    if len(recent) >= MAX_MESSAGES_PER_MINUTE:
         blocked_ips.add(ip)
         return False
     rate_limits[ip].append(now)
@@ -73,16 +76,28 @@ def connect():
     
     print(f"CONNECT: {my_code} wants to connect to {their_code} from {ip}")
     
+    # Validate input
+    if not my_code or not their_code:
+        return jsonify({'error': 'both codes are required'}), 400
+    
+    if my_code == their_code:
+        return jsonify({'error': "you can't connect to yourself"}), 400
+    
+    if len(my_code) != 8 or len(their_code) != 8:
+        return jsonify({'error': 'codes must be 8 characters'}), 400
+    
     if not check_ip_connection_limit(ip):
         return jsonify({'error': 'too many connections from this IP'}), 429
     
+    # Register user if not exists
     if my_code not in users:
         users[my_code] = {'code': my_code, 'partner': None}
         print(f"REGISTERED: {my_code}")
     
+    # Check if target code exists
     if their_code not in users:
         print(f"ERROR: {their_code} not found")
-        return jsonify({'error': 'code not found - ask them to refresh'}), 404
+        return jsonify({'error': 'code not found - ask them to refresh their page'}), 404
     
     for sid, session in chat_sessions.items():
         if (session['user1'] == my_code and session['user2'] == their_code) or \
@@ -132,6 +147,15 @@ def send_msg():
     
     if session_id not in chat_sessions:
         return jsonify({'error': 'session not found or expired'}), 404
+    
+    # Check document link limits
+    text = data.get('text', '')
+    document_extensions = ['.pdf', '.epub', '.docx']
+    if any(ext in text.lower() for ext in document_extensions):
+        doc_count = sum(1 for m in chat_sessions[session_id]['messages'] 
+                       if any(ext in m.get('text', '').lower() for ext in document_extensions))
+        if doc_count >= MAX_DOCUMENT_LINKS_PER_SESSION:
+            return jsonify({'error': f'Document limit reached ({MAX_DOCUMENT_LINKS_PER_SESSION} per session)'}), 429
     
     chat_sessions[session_id]['last_activity'] = time.time()
     
