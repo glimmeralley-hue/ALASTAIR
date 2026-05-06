@@ -41,8 +41,10 @@ function App() {
     return [myCode, theirCode].sort().join('')
   }
 
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000'
+
   useEffect(() => {
-    fetch('http://localhost:5000/getcode', {method: 'POST'})
+    fetch(`${API_URL}/getcode`, {method: 'POST'})
       .then(r => r.json())
       .then(d => setMyCode(d.code))
   }, [])
@@ -74,7 +76,7 @@ function App() {
   useEffect(() => {
     if (!sessionId) return
     const interval = setInterval(() => {
-      fetch(`http://localhost:5000/messages/${sessionId}?user=${myCode}`)
+      fetch(`${API_URL}/messages/${sessionId}?user=${myCode}`)
         .then(r => {
           if (r.status === 404) {
             setError('Session expired')
@@ -153,7 +155,7 @@ function App() {
       return
     }
     
-    fetch('http://localhost:5000/connect', {
+    fetch(`${API_URL}/connect`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ myCode, theirCode })
@@ -343,7 +345,7 @@ function sendMsg(type: string = 'text', content?: string) {
     const encrypted = encrypt(toSend, key)
     const m = { id, sender: myCode, text: encrypted, type, encrypted: true }
     
-    fetch('http://localhost:5000/send', {
+    fetch(`${API_URL}/send`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...m, sessionId })
