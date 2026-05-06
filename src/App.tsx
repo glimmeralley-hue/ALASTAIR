@@ -377,22 +377,55 @@ function sendMsg(type: string = 'text', content?: string) {
     }, 5000)
   }
 
-  function imageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  function compressImage(file: File, maxWidth = 800, quality = 0.7): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const img = new Image()
+        img.onload = () => {
+          const canvas = document.createElement('canvas')
+          let width = img.width
+          let height = img.height
+          
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width)
+            width = maxWidth
+          }
+          
+          canvas.width = width
+          canvas.height = height
+          const ctx = canvas.getContext('2d')!
+          ctx.drawImage(img, 0, 0, width, height)
+          
+          // Compress as JPEG
+          resolve(canvas.toDataURL('image/jpeg', quality))
+        }
+        img.src = reader.result as string
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(file)
+    })
+  }
+
+  async function imageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     
-    if (file.size > 2 * 1024 * 1024) {
-      setError('Image too large - max 2MB')
+    if (file.size > 5 * 1024 * 1024) {
+      setError('Image too large - max 5MB')
       setTimeout(() => setError(''), 5000)
       return
     }
     
-    const reader = new FileReader()
-    reader.onload = () => {
-      const base64 = reader.result as string
-      sendMsg('image', base64)
+    try {
+      setWarning('Compressing image...')
+      const compressed = await compressImage(file, 800, 0.7)
+      setWarning('')
+      sendMsg('image', compressed)
+    } catch {
+      setError('Failed to process image')
+      setTimeout(() => setError(''), 5000)
     }
-    reader.readAsDataURL(file)
     
     e.target.value = ''
   }
