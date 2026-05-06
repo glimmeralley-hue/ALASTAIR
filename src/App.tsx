@@ -118,9 +118,9 @@ function App() {
             })
           }
         })
-    }, 1000)
+    }, 500)  // Poll every 500ms for lower latency
     return () => clearInterval(interval)
-  }, [sessionId])
+  }, [sessionId, myCode, API_URL])
 
   useEffect(() => {
     if (locationSharing && connected) {

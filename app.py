@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_compress import Compress
 import uuid
 import time
 import os
@@ -9,6 +10,7 @@ from collections import defaultdict
 
 app = Flask(__name__)
 CORS(app)
+Compress(app)  # Enable gzip compression
 
 # Upstash Redis REST API
 UPSTASH_REDIS_REST_URL = os.environ.get('UPSTASH_REDIS_REST_URL')
