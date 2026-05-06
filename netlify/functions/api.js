@@ -40,13 +40,22 @@ exports.handler = async (event, context) => {
         return { statusCode: 400, headers, body: JSON.stringify({ error: 'Both codes required' }) };
       }
 
-      // Create session
-      const sessionId = generateUUID();
+      // Check for existing session between these two users
       const sessionKey = `session:${[myCode, theirCode].sort().join(':')}`;
-      await redis.setex(sessionKey, SESSION_TTL, sessionId);
-      await redis.setex(`session:${sessionId}`, SESSION_TTL, JSON.stringify({ 
-        user1: myCode, user2: theirCode, created: Date.now() 
-      }));
+      let sessionId = await redis.get(sessionKey);
+      
+      if (!sessionId) {
+        // Create new session
+        sessionId = generateUUID();
+        await redis.setex(sessionKey, SESSION_TTL, sessionId);
+        await redis.setex(`session:${sessionId}`, SESSION_TTL, JSON.stringify({ 
+          user1: myCode, user2: theirCode, created: Date.now() 
+        }));
+      } else {
+        // Refresh session TTL
+        await redis.expire(sessionKey, SESSION_TTL);
+        await redis.expire(`session:${sessionId}`, SESSION_TTL);
+      }
 
       return { statusCode: 200, headers, body: JSON.stringify({ sessionId, connected: true }) };
     }
