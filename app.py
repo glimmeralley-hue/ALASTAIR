@@ -9,6 +9,7 @@ import requests
 from collections import defaultdict
 
 app = Flask(__name__)
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max request size
 CORS(app)
 Compress(app)  # Enable gzip compression
 
