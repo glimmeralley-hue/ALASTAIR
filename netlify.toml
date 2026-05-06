@@ -4,6 +4,7 @@
 
 [build.environment]
   VITE_API_URL = "https://alistair1001.netlify.app/.netlify/functions/api"
+  PYTHON_VERSION = "3.9"
 
 [functions]
   directory = "netlify/functions"
