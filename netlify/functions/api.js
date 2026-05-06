@@ -82,7 +82,7 @@ exports.handler = async (event, context) => {
       }
 
       const messagesRaw = await redis.lrange(`messages:${sessionId}`, 0, -1);
-      const messages = messagesRaw.map(m => JSON.parse(m));
+      const messages = messagesRaw.map(m => typeof m === 'string' ? JSON.parse(m) : m);
 
       const unread = messages.filter(m => !m.read_by.includes(userCode));
       unread.forEach(m => m.read_by.push(userCode));
