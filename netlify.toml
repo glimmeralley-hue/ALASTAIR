@@ -3,7 +3,7 @@
   publish = "dist"
 
 [build.environment]
-  VITE_API_URL = "https://alistair1001.netlify.app/.netlify/functions/api"
+  VITE_API_URL = "https://alastairr.netlify.app/.netlify/functions/api"
   PYTHON_VERSION = "3.9"
 
 [functions]
