@@ -146,17 +146,34 @@ def connect():
         redis_set(f"user:{my_code}", my_user, ex=3600)
         print(f"REGISTERED: {my_code}")
     
-    # Look for existing session
+    # Look for existing session - check both users
     session_id = None
-    # Try to get session by checking if we can find one with these users
-    # For simplicity, we'll check a session key pattern
+    
+    # Check if I already have a session
     potential_sid = my_user.get('session_id')
     if potential_sid:
         existing = redis_get(f"session:{potential_sid}")
         if existing and ((existing['user1'] == my_code and existing['user2'] == their_code) or
                         (existing['user1'] == their_code and existing['user2'] == my_code)):
             session_id = potential_sid
-            print(f"FOUND existing session: {session_id}")
+            print(f"FOUND my existing session: {session_id}")
+            existing['last_activity'] = time.time()
+            redis_set(f"session:{session_id}", existing, ex=SESSION_TIMEOUT)
+            ip_sessions[ip].add(session_id)
+            return jsonify({'sessionId': session_id, 'connected': True})
+    
+    # Check if THEY already have a session with me
+    their_sid = their_user.get('session_id')
+    if their_sid:
+        existing = redis_get(f"session:{their_sid}")
+        if existing and ((existing['user1'] == my_code and existing['user2'] == their_code) or
+                        (existing['user1'] == their_code and existing['user2'] == my_code)):
+            session_id = their_sid
+            print(f"FOUND their existing session: {session_id}")
+            # Update my user to point to same session
+            my_user['session_id'] = session_id
+            my_user['partner'] = their_code
+            redis_set(f"user:{my_code}", my_user, ex=3600)
             existing['last_activity'] = time.time()
             redis_set(f"session:{session_id}", existing, ex=SESSION_TIMEOUT)
             ip_sessions[ip].add(session_id)
