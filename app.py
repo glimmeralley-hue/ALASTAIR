@@ -13,17 +13,26 @@ app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max request size
 CORS(app)
 Compress(app)  # Enable gzip compression
 
-# Upstash Redis REST API
+# In-memory storage (primary - works without Redis)
+users = {}
+chat_sessions = {}
+rate_limits = defaultdict(list)
+ip_sessions = defaultdict(set)
+blocked_ips = set()
+
+# Upstash Redis REST API (optional - for persistence across restarts)
 UPSTASH_REDIS_REST_URL = os.environ.get('UPSTASH_REDIS_REST_URL')
 UPSTASH_REDIS_REST_TOKEN = os.environ.get('UPSTASH_REDIS_REST_TOKEN')
+USE_REDIS = bool(UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN)
 
 def redis_get(key):
-    if not UPSTASH_REDIS_REST_URL:
+    if not USE_REDIS:
         return None
     try:
         resp = requests.get(
             f"{UPSTASH_REDIS_REST_URL}/get/{key}",
-            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
+            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
+            timeout=2
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -34,7 +43,7 @@ def redis_get(key):
     return None
 
 def redis_set(key, value, ex=None):
-    if not UPSTASH_REDIS_REST_URL:
+    if not USE_REDIS:
         return False
     try:
         body = {"value": json.dumps(value)}
@@ -43,30 +52,13 @@ def redis_set(key, value, ex=None):
         resp = requests.post(
             f"{UPSTASH_REDIS_REST_URL}/set/{key}",
             headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
-            json=body
+            json=body,
+            timeout=2
         )
         return resp.status_code == 200
     except Exception as e:
         print(f"Redis set error: {e}")
     return False
-
-def redis_delete(key):
-    if not UPSTASH_REDIS_REST_URL:
-        return False
-    try:
-        resp = requests.get(
-            f"{UPSTASH_REDIS_REST_URL}/del/{key}",
-            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
-        )
-        return resp.status_code == 200
-    except Exception as e:
-        print(f"Redis del error: {e}")
-    return False
-
-# In-memory fallback (for rate limits, IP tracking)
-rate_limits = defaultdict(list)
-ip_sessions = defaultdict(set)
-blocked_ips = set()
 
 MAX_MESSAGES_PER_MINUTE = 10
 SESSION_TIMEOUT = 300
@@ -106,13 +98,14 @@ def security_check():
 def get_code():
     code = str(uuid.uuid4())[:8].upper()
     user_id = str(uuid.uuid4())
-    user_data = {
+    users[code] = {
         'id': user_id,
         'code': code,
         'partner': None,
         'created': time.time()
     }
-    redis_set(f"user:{code}", user_data, ex=3600)
+    # Also save to Redis if available (for persistence)
+    redis_set(f"user:{code}", users[code], ex=3600)
     return jsonify({'code': code, 'id': user_id})
 
 @app.route('/connect', methods=['POST'])
@@ -136,46 +129,31 @@ def connect():
     if not check_ip_connection_limit(ip):
         return jsonify({'error': 'too many connections from this IP'}), 429
     
-    # Check if target user exists in Redis
-    their_user = redis_get(f"user:{their_code}")
-    if not their_user:
+    # Check if target user exists
+    if their_code not in users:
         print(f"ERROR: {their_code} not found")
         return jsonify({'error': 'code not found - ask them to refresh their page'}), 404
     
-    # Check for existing session
-    my_user = redis_get(f"user:{my_code}")
-    if not my_user:
-        my_user = {'code': my_code, 'partner': None}
-        redis_set(f"user:{my_code}", my_user, ex=3600)
+    # Register user if not exists
+    if my_code not in users:
+        users[my_code] = {'code': my_code, 'partner': None}
         print(f"REGISTERED: {my_code}")
     
-    # Look for existing session
-    session_id = None
-    # Try to get session by checking if we can find one with these users
-    # For simplicity, we'll check a session key pattern
-    potential_sid = my_user.get('session_id')
-    if potential_sid:
-        existing = redis_get(f"session:{potential_sid}")
-        if existing and ((existing['user1'] == my_code and existing['user2'] == their_code) or
-                        (existing['user1'] == their_code and existing['user2'] == my_code)):
-            session_id = potential_sid
-            print(f"FOUND existing session: {session_id}")
-            existing['last_activity'] = time.time()
-            redis_set(f"session:{session_id}", existing, ex=SESSION_TIMEOUT)
-            ip_sessions[ip].add(session_id)
-            return jsonify({'sessionId': session_id, 'connected': True})
+    # Check for existing session
+    for sid, session in chat_sessions.items():
+        if (session['user1'] == my_code and session['user2'] == their_code) or \
+           (session['user1'] == their_code and session['user2'] == my_code):
+            print(f"FOUND existing session: {sid}")
+            ip_sessions[ip].add(sid)
+            chat_sessions[sid]['last_activity'] = time.time()
+            return jsonify({'sessionId': sid, 'connected': True})
     
     # Create new session
     session_id = str(uuid.uuid4())
-    my_user['partner'] = their_code
-    my_user['session_id'] = session_id
-    their_user['partner'] = my_code
-    their_user['session_id'] = session_id
+    users[my_code]['partner'] = their_code
+    users[their_code]['partner'] = my_code
     
-    redis_set(f"user:{my_code}", my_user, ex=3600)
-    redis_set(f"user:{their_code}", their_user, ex=3600)
-    
-    session_data = {
+    chat_sessions[session_id] = {
         'user1': my_code,
         'user2': their_code,
         'messages': [],
@@ -183,9 +161,11 @@ def connect():
         'last_activity': time.time(),
         'ips': {my_code: ip, their_code: None}
     }
-    redis_set(f"session:{session_id}", session_data, ex=SESSION_TIMEOUT)
     
     ip_sessions[ip].add(session_id)
+    
+    # Also save to Redis if available
+    redis_set(f"session:{session_id}", chat_sessions[session_id], ex=SESSION_TIMEOUT)
     
     print(f"CREATED new session: {session_id}")
     return jsonify({'sessionId': session_id, 'connected': True})
@@ -204,9 +184,11 @@ def send_msg():
     data = request.json
     session_id = data.get('sessionId')
     
-    session = redis_get(f"session:{session_id}")
-    if not session:
+    # Use in-memory storage
+    if session_id not in chat_sessions:
         return jsonify({'error': 'session not found or expired'}), 404
+    
+    session = chat_sessions[session_id]
     
     # Check document link limits
     text = data.get('text', '')
@@ -234,22 +216,22 @@ def send_msg():
         session['messages'] = []
     session['messages'].append(msg)
     
-    # Keep only last 100 messages to prevent Redis bloat
+    # Keep only last 100 messages
     if len(session['messages']) > 100:
         session['messages'] = session['messages'][-100:]
     
-    redis_set(f"session:{session_id}", session, ex=SESSION_TIMEOUT)
     print(f"Message sent to {session_id} from {ip}: {msg['text'][:20]}...")
     
     return jsonify({'id': msg['id']})
 
 @app.route('/messages/<session_id>', methods=['GET'])
 def get_messages(session_id):
-    session = redis_get(f"session:{session_id}")
+    cleanup_expired_sessions()
     
-    if not session:
+    if session_id not in chat_sessions:
         return jsonify({'error': 'session expired'}), 404
     
+    session = chat_sessions[session_id]
     session['last_activity'] = time.time()
     
     user_code = request.args.get('user')
@@ -270,11 +252,19 @@ def get_messages(session_id):
         m for m in msgs if len(m.get('read_by', [])) < 2
     ]
     
-    redis_set(f"session:{session_id}", session, ex=SESSION_TIMEOUT)
-    
     print(f"Session {session_id}: user {user_code} got {len(unread_for_user)} messages, {len(session['messages'])} remaining")
     
     return jsonify(unread_for_user)
+
+def cleanup_expired_sessions():
+    now = time.time()
+    expired = []
+    for sid, session in chat_sessions.items():
+        if now - session.get('last_activity', 0) > SESSION_TIMEOUT:
+            expired.append(sid)
+    for sid in expired:
+        del chat_sessions[sid]
+        print(f"Session {sid} expired and removed")
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
