@@ -25,7 +25,7 @@ def redis_get(key):
         resp = requests.get(
             f"{UPSTASH_REDIS_REST_URL}/get/{key}",
             headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
-            timeout=2
+            timeout=5
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -46,7 +46,7 @@ def redis_set(key, value, ex=None):
             f"{UPSTASH_REDIS_REST_URL}/set/{key}",
             headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
             json=body,
-            timeout=2
+            timeout=5
         )
         return resp.status_code == 200
     except Exception as e:
@@ -60,7 +60,7 @@ def redis_delete(key):
         resp = requests.get(
             f"{UPSTASH_REDIS_REST_URL}/del/{key}",
             headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
-            timeout=2
+            timeout=5
         )
         return resp.status_code == 200
     except Exception as e:
