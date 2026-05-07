@@ -22,7 +22,8 @@ def redis_get(key):
     try:
         resp = requests.get(
             f"{UPSTASH_REDIS_REST_URL}/get/{key}",
-            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
+            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
+            timeout=2
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -42,7 +43,8 @@ def redis_set(key, value, ex=None):
         resp = requests.post(
             f"{UPSTASH_REDIS_REST_URL}/set/{key}",
             headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
-            json=body
+            json=body,
+            timeout=2
         )
         return resp.status_code == 200
     except Exception as e:
@@ -55,7 +57,8 @@ def redis_delete(key):
     try:
         resp = requests.get(
             f"{UPSTASH_REDIS_REST_URL}/del/{key}",
-            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
+            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
+            timeout=2
         )
         return resp.status_code == 200
     except Exception as e:
@@ -109,7 +112,11 @@ def get_code():
         'partner': None,
         'created': time.time()
     }
-    redis_set(f"user:{code}", user_data, ex=3600)
+    # Don't block response on Redis - user can connect even if Redis is slow
+    try:
+        redis_set(f"user:{code}", user_data, ex=3600)
+    except Exception as e:
+        print(f"Redis save failed for {code}: {e}")
     return jsonify({'code': code, 'id': user_id})
 
 @app.route('/connect', methods=['POST'])
