@@ -102,6 +102,7 @@ function App() {
               const newMsgs = [...prev, ...newMessages]
               
               newMessages.forEach((m: any) => {
+                const displayTime = m.type === 'image' ? 10000 : 5000
                 setTimeout(() => {
                   setFadingMsgs(f => new Set([...f, m.id]))
                   setTimeout(() => {
@@ -112,7 +113,7 @@ function App() {
                       return n
                     })
                   }, 1000)
-                }, 5000)
+                }, displayTime)
               })
               return newMsgs
             })
@@ -364,6 +365,8 @@ function sendMsg(type: string = 'text', content?: string) {
     setMessages(prev => [...prev, { id, sender: myCode, text: toSend, type, local: true }])
     setMsg('')
     
+    const displayTime = type === 'image' ? 10000 : 5000
+    
     setTimeout(() => {
       setFadingMsgs(f => new Set([...f, id]))
       setTimeout(() => {
@@ -374,7 +377,7 @@ function sendMsg(type: string = 'text', content?: string) {
           return n
         })
       }, 1000)
-    }, 5000)
+    }, displayTime)
   }
 
   function compressImage(file: File, maxWidth = 800, quality = 0.7): Promise<string> {
