@@ -118,7 +118,7 @@ function App() {
             })
           }
         })
-    }, 500)  // Poll every 500ms for lower latency
+    }, 500)
     return () => clearInterval(interval)
   }, [sessionId, myCode, API_URL])
 
@@ -397,7 +397,6 @@ function sendMsg(type: string = 'text', content?: string) {
           const ctx = canvas.getContext('2d')!
           ctx.drawImage(img, 0, 0, width, height)
           
-          // Compress as JPEG
           resolve(canvas.toDataURL('image/jpeg', quality))
         }
         img.src = reader.result as string

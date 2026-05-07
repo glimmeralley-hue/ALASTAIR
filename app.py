@@ -9,11 +9,10 @@ import requests
 from collections import defaultdict
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max request size
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
 CORS(app)
-Compress(app)  # Enable gzip compression
+Compress(app)
 
-# Upstash Redis REST API
 UPSTASH_REDIS_REST_URL = os.environ.get('UPSTASH_REDIS_REST_URL')
 UPSTASH_REDIS_REST_TOKEN = os.environ.get('UPSTASH_REDIS_REST_TOKEN')
 
@@ -63,7 +62,6 @@ def redis_delete(key):
         print(f"Redis del error: {e}")
     return False
 
-# In-memory fallback (for rate limits, IP tracking)
 rate_limits = defaultdict(list)
 ip_sessions = defaultdict(set)
 blocked_ips = set()
@@ -94,7 +92,6 @@ def check_ip_connection_limit(ip):
         return False
     return True
 
-# Cleanup is handled by Redis TTL (ex=SESSION_TIMEOUT)
 
 @app.before_request
 def security_check():
