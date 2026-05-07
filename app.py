@@ -1,3 +1,5 @@
+
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_compress import Compress
@@ -192,13 +194,17 @@ def connect():
     
     # Create new session
     session_id = str(uuid.uuid4())
+    print(f"CREATING new session: {session_id}")
+    
     my_user['partner'] = their_code
     my_user['session_id'] = session_id
     their_user['partner'] = my_code
     their_user['session_id'] = session_id
     
-    redis_set(f"user:{my_code}", my_user, ex=3600)
-    redis_set(f"user:{their_code}", their_user, ex=3600)
+    # Save both users - retry if needed
+    my_saved = redis_set(f"user:{my_code}", my_user, ex=3600)
+    their_saved = redis_set(f"user:{their_code}", their_user, ex=3600)
+    print(f"User save: my={my_saved}, their={their_saved}")
     
     session_data = {
         'user1': my_code,
@@ -208,7 +214,9 @@ def connect():
         'last_activity': time.time(),
         'ips': {my_code: ip, their_code: None}
     }
-    redis_set(f"session:{session_id}", session_data, ex=SESSION_TIMEOUT)
+    
+    session_saved = redis_set(f"session:{session_id}", session_data, ex=SESSION_TIMEOUT)
+    print(f"Session save: {session_saved}")
     
     ip_sessions[ip].add(session_id)
     
