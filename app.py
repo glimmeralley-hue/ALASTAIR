@@ -202,6 +202,8 @@ def send_msg():
     session_id = data.get('sessionId')
     
     session = redis_get(f"session:{session_id}")
+    print(f"SEND: Looking for session {session_id}, found: {session is not None}")
+    
     if not session:
         return jsonify({'error': 'session not found or expired'}), 404
     
@@ -235,14 +237,16 @@ def send_msg():
     if len(session['messages']) > 100:
         session['messages'] = session['messages'][-100:]
     
-    redis_set(f"session:{session_id}", session, ex=SESSION_TIMEOUT)
-    print(f"Message sent to {session_id} from {ip}: {msg['text'][:20]}...")
+    success = redis_set(f"session:{session_id}", session, ex=SESSION_TIMEOUT)
+    print(f"Message sent to {session_id} from {ip}: {msg['text'][:20]}... Redis save: {success}")
+    print(f"Session now has {len(session['messages'])} messages")
     
     return jsonify({'id': msg['id']})
 
 @app.route('/messages/<session_id>', methods=['GET'])
 def get_messages(session_id):
     session = redis_get(f"session:{session_id}")
+    print(f"GET MESSAGES: session {session_id}, found: {session is not None}")
     
     if not session:
         return jsonify({'error': 'session expired'}), 404

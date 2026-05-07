@@ -87,8 +87,10 @@ function App() {
           return r.json()
         })
         .then(msgs => {
+          console.log('Polled messages:', msgs)
           if (!Array.isArray(msgs)) return
           if (msgs.length > 0) {
+            console.log('Received', msgs.length, 'new messages')
             const key = getKey()
             const decrypted = msgs.map((m: any) => ({
               ...m,
@@ -163,6 +165,7 @@ function App() {
     })
     .then(r => r.json())
     .then(d => {
+      console.log('Connect response:', d)
       if (d.error) {
         setError(d.error)
         setTimeout(() => setError(''), 5000)
@@ -170,6 +173,7 @@ function App() {
       }
       setSessionId(d.sessionId)
       setConnected(true)
+      console.log('Connected with session:', d.sessionId)
     })
     .catch(err => {
       setError('Connection failed - is server running?')
@@ -352,15 +356,19 @@ function sendMsg(type: string = 'text', content?: string) {
       body: JSON.stringify({ ...m, sessionId })
     })
     .then(r => {
+      console.log('Send response:', r.status)
       if (r.status === 429) {
         setError('Rate limit exceeded - IP blocked')
         setTimeout(() => setError(''), 5000)
       } else if (!r.ok) {
+        r.text().then(t => console.error('Send failed:', t))
         setError('Session expired or blocked')
         setTimeout(() => setError(''), 5000)
+      } else {
+        console.log('Message sent successfully:', id)
       }
     })
-    .catch(() => {})
+    .catch(e => console.error('Send error:', e))
     
     setMessages(prev => [...prev, { id, sender: myCode, text: toSend, type, local: true }])
     setMsg('')
