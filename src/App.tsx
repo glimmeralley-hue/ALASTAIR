@@ -87,10 +87,8 @@ function App() {
           return r.json()
         })
         .then(msgs => {
-          console.log('Polled messages:', msgs)
           if (!Array.isArray(msgs)) return
           if (msgs.length > 0) {
-            console.log('Received', msgs.length, 'new messages')
             const key = getKey()
             const decrypted = msgs.map((m: any) => ({
               ...m,
@@ -104,7 +102,6 @@ function App() {
               const newMsgs = [...prev, ...newMessages]
               
               newMessages.forEach((m: any) => {
-                const displayTime = m.type === 'image' ? 10000 : 5000
                 setTimeout(() => {
                   setFadingMsgs(f => new Set([...f, m.id]))
                   setTimeout(() => {
@@ -115,13 +112,13 @@ function App() {
                       return n
                     })
                   }, 1000)
-                }, displayTime)
+                }, 5000)
               })
               return newMsgs
             })
           }
         })
-    }, 500)
+    }, 500)  // Poll every 500ms for lower latency
     return () => clearInterval(interval)
   }, [sessionId, myCode, API_URL])
 
@@ -165,7 +162,6 @@ function App() {
     })
     .then(r => r.json())
     .then(d => {
-      console.log('Connect response:', d)
       if (d.error) {
         setError(d.error)
         setTimeout(() => setError(''), 5000)
@@ -173,7 +169,6 @@ function App() {
       }
       setSessionId(d.sessionId)
       setConnected(true)
-      console.log('Connected with session:', d.sessionId)
     })
     .catch(err => {
       setError('Connection failed - is server running?')
@@ -356,24 +351,18 @@ function sendMsg(type: string = 'text', content?: string) {
       body: JSON.stringify({ ...m, sessionId })
     })
     .then(r => {
-      console.log('Send response:', r.status)
       if (r.status === 429) {
         setError('Rate limit exceeded - IP blocked')
         setTimeout(() => setError(''), 5000)
       } else if (!r.ok) {
-        r.text().then(t => console.error('Send failed:', t))
         setError('Session expired or blocked')
         setTimeout(() => setError(''), 5000)
-      } else {
-        console.log('Message sent successfully:', id)
       }
     })
-    .catch(e => console.error('Send error:', e))
+    .catch(() => {})
     
     setMessages(prev => [...prev, { id, sender: myCode, text: toSend, type, local: true }])
     setMsg('')
-    
-    const displayTime = type === 'image' ? 10000 : 5000
     
     setTimeout(() => {
       setFadingMsgs(f => new Set([...f, id]))
@@ -385,7 +374,7 @@ function sendMsg(type: string = 'text', content?: string) {
           return n
         })
       }, 1000)
-    }, displayTime)
+    }, 5000)
   }
 
   function compressImage(file: File, maxWidth = 800, quality = 0.7): Promise<string> {
@@ -408,6 +397,7 @@ function sendMsg(type: string = 'text', content?: string) {
           const ctx = canvas.getContext('2d')!
           ctx.drawImage(img, 0, 0, width, height)
           
+          // Compress as JPEG
           resolve(canvas.toDataURL('image/jpeg', quality))
         }
         img.src = reader.result as string

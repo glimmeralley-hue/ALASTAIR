@@ -2,100 +2,130 @@
 
 **Messages that vanish.**
 
-A dead-simple private chat app. No signups, no logs, no traces. Just two people talking and then forgetting.
-
-Live at: **https://alastair-sable.vercel.app**
-
----
-
-## What This Is
-
-I built this because I wanted a way to talk to people without leaving a paper trail. No phone number to give away. No "let me add you on..." Just open a browser, grab a code, and start talking.
-
-Messages disappear 5 seconds after your friend reads them. That's it. No history. No screenshots (well, we try to warn you). No data sitting on some server forever.
-
----
-
-## How It Works
-
-1. **Open the app** - you get a random 8-character code
-2. **Share your code** with someone - text it, say it, write it on paper
-3. **They enter your code** and hit connect
-4. **Chat** - type, send images, whatever
-5. **Watch it vanish** - messages fade away after being read
-
----
-
-## Running It Yourself
-
-### Local Dev
-```bash
-# Start the backend
-python app.py
-
-# In another terminal
-npm install
-npm run dev
-```
-
-### Deploy Your Own
-
-**Frontend (Vercel):**
-- Push this repo to GitHub
-- Import to Vercel
-- Set env vars: `VITE_API_URL` = your backend URL
-
-**Backend (Render):**
-- Uses `render.yaml` - deploys automatically
-- Set env vars: `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
-
----
-
-## The Stack
-
-- **Frontend**: React + TypeScript, Vite for building
-- **Backend**: Python + Flask
-- **Storage**: Upstash Redis (messages expire automatically)
-- **Encryption**: XOR cipher (simple but works for this use case)
+Alastair is a secure messaging app where messages disappear after they're read. No accounts, no history, no traces - just private conversations.
 
 ---
 
 ## Features
 
-| Feature | Details |
-|---------|---------|
-| **No accounts** | Random codes, no personal info |
-| **Self-destruct** | 5 seconds after being read |
-| **E2E encryption** | Server can't read your messages |
-| **Images** | Compressed before sending |
-| **Screenshots** | We detect PrintScreen and warn |
-| **Rate limits** | 10 messages/min to prevent spam |
+### End-to-End Encryption
+- Your messages are scrambled with a secret key
+- Only you and the person you're chatting with can read them
+- Not even the server can see what you're saying
+
+### Self-Destructing Messages
+- Messages disappear 5 seconds after being read
+- Fade-out animation before they vanish
+- No message history stored anywhere
+
+### Anonymous
+- No email, no phone number, no registration
+- Just share a simple 8-character code
+- Each conversation gets a fresh, unique code
+
+### Privacy Features
+- Screenshot detection warns you if someone tries to capture
+- Messages auto-delete after 5 minutes of inactivity
+- Server can't read your encrypted messages
 
 ---
 
-## Privacy Notes
+## How to Use
 
-- Messages live in Redis with TTL (auto-delete after 5 min inactivity)
-- Server only sees encrypted blobs
-- No cookies, no analytics, no tracking
-- We literally can't tell who you are
+### Start the App
+```bash
+# Start the server
+python server.py
+
+# In another terminal, start the app
+npm run dev
+```
+
+### Get Your Code
+- Open the app and you'll see your 8-character code
+- Something like: `A1B2C3D4`
+
+### Share & Connect
+- **Share your code** with the person you want to chat with
+- **Enter their code** in the "Their Code" field
+- Click **CONNECT**
+
+### Chat
+- Type your message and hit SEND
+- Watch it appear, then fade away after 5 seconds
+- Share images too (up to 2MB)
 
 ---
 
-## Limitations
+## Technical Details
 
-- **XOR encryption** - Not bulletproof. Good enough for casual privacy, but don't use this for state secrets
-- **Screenshots** - We can detect the PrintScreen key but can't actually stop someone from screenshotting
-- **Server trust** - You have to trust the server isn't logging (though the code is open, so you can check)
+### Frontend
+- Built with React and TypeScript
+- Dark interface with smooth animations
+- Works in any modern web browser
+
+### Backend
+- Python Flask server
+- Messages live in memory only (no database)
+- Automatic cleanup of old conversations
+
+### Security
+- XOR encryption with shared keys
+- Rate limiting (10 messages per minute)
+- IP-based protection against abuse
 
 ---
 
-## Why I Built This
+## Features Overview
 
-Tired of every app wanting my phone number. Tired of conversations living forever in some database. Sometimes you just want to say something and have it disappear.
-
-That's it. No grand mission. Just a tool for private moments.
+| Feature | What It Does | Why It Matters |
+|---------|--------------|----------------|
+| **8-Character Codes** | Simple way to connect | No personal info needed |
+| **5-Second Messages** | Auto-delete after reading | No conversation history |
+| **End-to-End Encryption** | Scrambles your messages | Only intended recipient can read |
+| **Image Sharing** | Send photos securely | Same encryption as text |
+| **Screenshot Warnings** | Alerts if someone tries to save | Extra privacy protection |
+| **No Registration** | Just open and use | Zero personal data collection |
 
 ---
 
-Built with too much coffee and a healthy distrust of permanent records.
+## Privacy
+
+- **No accounts created** - you're completely anonymous
+- **No message storage** - conversations vanish forever
+- **No tracking** - we don't know who you are
+- **No data mining** - nothing to mine, nothing to sell
+
+---
+
+## Use Cases
+
+Alastair is designed for:
+- **Private conversations**
+- **Sensitive information sharing**
+- **Digital dead drops**
+- **When you need to say something without leaving a trace**
+
+Think of it as passing notes - once read, they disappear forever.
+
+---
+
+## Important Notes
+
+- **Messages truly disappear** - once gone, they're gone forever
+- **No recovery option** - by design for privacy
+- **5-minute timeout** - conversations end if inactive
+- **Browser-based** - nothing installs on your device
+
+---
+
+## Security Best Practices
+
+- Share codes through secure channels (in person, secure messenger)
+- Don't reuse codes for different conversations
+- Be aware that screenshots can still be taken (we just warn you)
+- Remember: once messages vanish, they're truly gone
+
+---
+
+**Alastair** - Because some conversations are better left unrecorded.

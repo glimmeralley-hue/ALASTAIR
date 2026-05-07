@@ -1,5 +1,3 @@
-
-
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from flask_compress import Compress
@@ -11,10 +9,11 @@ import requests
 from collections import defaultdict
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10MB max request size
 CORS(app)
-Compress(app)
+Compress(app)  # Enable gzip compression
 
+# Upstash Redis REST API
 UPSTASH_REDIS_REST_URL = os.environ.get('UPSTASH_REDIS_REST_URL')
 UPSTASH_REDIS_REST_TOKEN = os.environ.get('UPSTASH_REDIS_REST_TOKEN')
 
@@ -24,8 +23,7 @@ def redis_get(key):
     try:
         resp = requests.get(
             f"{UPSTASH_REDIS_REST_URL}/get/{key}",
-            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
-            timeout=10
+            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
         )
         if resp.status_code == 200:
             data = resp.json()
@@ -45,8 +43,7 @@ def redis_set(key, value, ex=None):
         resp = requests.post(
             f"{UPSTASH_REDIS_REST_URL}/set/{key}",
             headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
-            json=body,
-            timeout=10
+            json=body
         )
         return resp.status_code == 200
     except Exception as e:
@@ -59,14 +56,14 @@ def redis_delete(key):
     try:
         resp = requests.get(
             f"{UPSTASH_REDIS_REST_URL}/del/{key}",
-            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"},
-            timeout=10
+            headers={"Authorization": f"Bearer {UPSTASH_REDIS_REST_TOKEN}"}
         )
         return resp.status_code == 200
     except Exception as e:
         print(f"Redis del error: {e}")
     return False
 
+# In-memory fallback (for rate limits, IP tracking)
 rate_limits = defaultdict(list)
 ip_sessions = defaultdict(set)
 blocked_ips = set()
@@ -97,6 +94,7 @@ def check_ip_connection_limit(ip):
         return False
     return True
 
+# Cleanup is handled by Redis TTL (ex=SESSION_TIMEOUT)
 
 @app.before_request
 def security_check():
@@ -114,11 +112,7 @@ def get_code():
         'partner': None,
         'created': time.time()
     }
-    # Don't block response on Redis - user can connect even if Redis is slow
-    try:
-        redis_set(f"user:{code}", user_data, ex=3600)
-    except Exception as e:
-        print(f"Redis save failed for {code}: {e}")
+    redis_set(f"user:{code}", user_data, ex=3600)
     return jsonify({'code': code, 'id': user_id})
 
 @app.route('/connect', methods=['POST'])
@@ -144,49 +138,28 @@ def connect():
     
     # Check if target user exists in Redis
     their_user = redis_get(f"user:{their_code}")
-    print(f"CONNECT: their_user={their_code}, found={their_user is not None}, session_id={their_user.get('session_id') if their_user else None}")
     if not their_user:
         print(f"ERROR: {their_code} not found")
         return jsonify({'error': 'code not found - ask them to refresh their page'}), 404
     
     # Check for existing session
     my_user = redis_get(f"user:{my_code}")
-    print(f"CONNECT: my_user={my_code}, found={my_user is not None}, session_id={my_user.get('session_id') if my_user else None}")
     if not my_user:
         my_user = {'code': my_code, 'partner': None}
         redis_set(f"user:{my_code}", my_user, ex=3600)
         print(f"REGISTERED: {my_code}")
     
-    # Look for existing session - check THEIR session FIRST (they might have created it)
+    # Look for existing session
     session_id = None
-    
-    # Check if THEY already have a session with me
-    their_sid = their_user.get('session_id')
-    if their_sid:
-        existing = redis_get(f"session:{their_sid}")
-        print(f"CONNECT: Checking their session {their_sid}, found={existing is not None}")
-        if existing and ((existing['user1'] == my_code and existing['user2'] == their_code) or
-                        (existing['user1'] == their_code and existing['user2'] == my_code)):
-            session_id = their_sid
-            print(f"FOUND their existing session: {session_id}")
-            # Update my user to point to same session
-            my_user['session_id'] = session_id
-            my_user['partner'] = their_code
-            redis_set(f"user:{my_code}", my_user, ex=3600)
-            existing['last_activity'] = time.time()
-            redis_set(f"session:{session_id}", existing, ex=SESSION_TIMEOUT)
-            ip_sessions[ip].add(session_id)
-            return jsonify({'sessionId': session_id, 'connected': True})
-    
-    # Check if I already have a session (only if they don't have one)
+    # Try to get session by checking if we can find one with these users
+    # For simplicity, we'll check a session key pattern
     potential_sid = my_user.get('session_id')
     if potential_sid:
         existing = redis_get(f"session:{potential_sid}")
-        print(f"CONNECT: Checking my session {potential_sid}, found={existing is not None}")
         if existing and ((existing['user1'] == my_code and existing['user2'] == their_code) or
                         (existing['user1'] == their_code and existing['user2'] == my_code)):
             session_id = potential_sid
-            print(f"FOUND my existing session: {session_id}")
+            print(f"FOUND existing session: {session_id}")
             existing['last_activity'] = time.time()
             redis_set(f"session:{session_id}", existing, ex=SESSION_TIMEOUT)
             ip_sessions[ip].add(session_id)
@@ -194,17 +167,13 @@ def connect():
     
     # Create new session
     session_id = str(uuid.uuid4())
-    print(f"CREATING new session: {session_id}")
-    
     my_user['partner'] = their_code
     my_user['session_id'] = session_id
     their_user['partner'] = my_code
     their_user['session_id'] = session_id
     
-    # Save both users - retry if needed
-    my_saved = redis_set(f"user:{my_code}", my_user, ex=3600)
-    their_saved = redis_set(f"user:{their_code}", their_user, ex=3600)
-    print(f"User save: my={my_saved}, their={their_saved}")
+    redis_set(f"user:{my_code}", my_user, ex=3600)
+    redis_set(f"user:{their_code}", their_user, ex=3600)
     
     session_data = {
         'user1': my_code,
@@ -214,9 +183,7 @@ def connect():
         'last_activity': time.time(),
         'ips': {my_code: ip, their_code: None}
     }
-    
-    session_saved = redis_set(f"session:{session_id}", session_data, ex=SESSION_TIMEOUT)
-    print(f"Session save: {session_saved}")
+    redis_set(f"session:{session_id}", session_data, ex=SESSION_TIMEOUT)
     
     ip_sessions[ip].add(session_id)
     
@@ -238,8 +205,6 @@ def send_msg():
     session_id = data.get('sessionId')
     
     session = redis_get(f"session:{session_id}")
-    print(f"SEND: Looking for session {session_id}, found: {session is not None}")
-    
     if not session:
         return jsonify({'error': 'session not found or expired'}), 404
     
@@ -273,16 +238,14 @@ def send_msg():
     if len(session['messages']) > 100:
         session['messages'] = session['messages'][-100:]
     
-    success = redis_set(f"session:{session_id}", session, ex=SESSION_TIMEOUT)
-    print(f"Message sent to {session_id} from {ip}: {msg['text'][:20]}... Redis save: {success}")
-    print(f"Session now has {len(session['messages'])} messages")
+    redis_set(f"session:{session_id}", session, ex=SESSION_TIMEOUT)
+    print(f"Message sent to {session_id} from {ip}: {msg['text'][:20]}...")
     
     return jsonify({'id': msg['id']})
 
 @app.route('/messages/<session_id>', methods=['GET'])
 def get_messages(session_id):
     session = redis_get(f"session:{session_id}")
-    print(f"GET MESSAGES: session {session_id}, found: {session is not None}")
     
     if not session:
         return jsonify({'error': 'session expired'}), 404
