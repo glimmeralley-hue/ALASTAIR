@@ -142,37 +142,27 @@ def connect():
     
     # Check if target user exists in Redis
     their_user = redis_get(f"user:{their_code}")
+    print(f"CONNECT: their_user={their_code}, found={their_user is not None}, session_id={their_user.get('session_id') if their_user else None}")
     if not their_user:
         print(f"ERROR: {their_code} not found")
         return jsonify({'error': 'code not found - ask them to refresh their page'}), 404
     
     # Check for existing session
     my_user = redis_get(f"user:{my_code}")
+    print(f"CONNECT: my_user={my_code}, found={my_user is not None}, session_id={my_user.get('session_id') if my_user else None}")
     if not my_user:
         my_user = {'code': my_code, 'partner': None}
         redis_set(f"user:{my_code}", my_user, ex=3600)
         print(f"REGISTERED: {my_code}")
     
-    # Look for existing session - check both users
+    # Look for existing session - check THEIR session FIRST (they might have created it)
     session_id = None
-    
-    # Check if I already have a session
-    potential_sid = my_user.get('session_id')
-    if potential_sid:
-        existing = redis_get(f"session:{potential_sid}")
-        if existing and ((existing['user1'] == my_code and existing['user2'] == their_code) or
-                        (existing['user1'] == their_code and existing['user2'] == my_code)):
-            session_id = potential_sid
-            print(f"FOUND my existing session: {session_id}")
-            existing['last_activity'] = time.time()
-            redis_set(f"session:{session_id}", existing, ex=SESSION_TIMEOUT)
-            ip_sessions[ip].add(session_id)
-            return jsonify({'sessionId': session_id, 'connected': True})
     
     # Check if THEY already have a session with me
     their_sid = their_user.get('session_id')
     if their_sid:
         existing = redis_get(f"session:{their_sid}")
+        print(f"CONNECT: Checking their session {their_sid}, found={existing is not None}")
         if existing and ((existing['user1'] == my_code and existing['user2'] == their_code) or
                         (existing['user1'] == their_code and existing['user2'] == my_code)):
             session_id = their_sid
@@ -181,6 +171,20 @@ def connect():
             my_user['session_id'] = session_id
             my_user['partner'] = their_code
             redis_set(f"user:{my_code}", my_user, ex=3600)
+            existing['last_activity'] = time.time()
+            redis_set(f"session:{session_id}", existing, ex=SESSION_TIMEOUT)
+            ip_sessions[ip].add(session_id)
+            return jsonify({'sessionId': session_id, 'connected': True})
+    
+    # Check if I already have a session (only if they don't have one)
+    potential_sid = my_user.get('session_id')
+    if potential_sid:
+        existing = redis_get(f"session:{potential_sid}")
+        print(f"CONNECT: Checking my session {potential_sid}, found={existing is not None}")
+        if existing and ((existing['user1'] == my_code and existing['user2'] == their_code) or
+                        (existing['user1'] == their_code and existing['user2'] == my_code)):
+            session_id = potential_sid
+            print(f"FOUND my existing session: {session_id}")
             existing['last_activity'] = time.time()
             redis_set(f"session:{session_id}", existing, ex=SESSION_TIMEOUT)
             ip_sessions[ip].add(session_id)
